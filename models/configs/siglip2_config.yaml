@@ -1,0 +1,95 @@
+# SigLIP2 Multi-Label Classification Configuration
+
+# 1. Model Configuration
+model:
+  name: siglip2-base-patch16-224
+  pretrained_model_id: google/siglip2-base-patch16-224
+  num_labels: 5  # has_step, has_movable_chair, has_high_chair, has_fixed_chair, has_floor_chair
+
+# 2. Data Configuration
+data:
+  train_ann_file: "train_images/train_annotation.json"
+  train_img_dir: "train_images/images"
+  val_ann_file: "train_images/val_annotation.json"
+  val_img_dir: "train_images/images"
+
+# 3. Augmentation Configuration
+augmentations:
+  enabled: true
+  train:
+    - name: HorizontalFlip
+      params:
+        p: 0.5
+    - name: RandomBrightnessContrast
+      params:
+        p: 0.3
+        brightness_limit: 0.2
+        contrast_limit: 0.2
+    - name: ColorJitter
+      params:
+        p: 0.3
+        brightness: 0.2
+        contrast: 0.2
+        saturation: 0.2
+        hue: 0.1
+    - name: Affine
+      params:
+        p: 0.3
+        translate_percent: 0.1
+        scale: [0.9, 1.1]
+        rotate: [-15, 15]
+  val:
+    []  # No augmentation for validation
+
+# 4. Training Configuration
+training:
+  epochs: 100
+  batch_size: 32
+  gradient_accumulation_steps: 1
+  learning_rate: 3.0e-5  # SigLIP2는 약간 낮은 LR 추천
+  min_lr: 1.0e-7
+  weight_decay: 0.01
+  warmup_epochs: 10
+  max_grad_norm: 1.0
+  early_stopping_patience: 15
+  device: cuda
+  freeze_vision_encoder: false
+
+  # Best model & early stopping criterion
+  best_metric: "mAP_macro"  # Options: "loss", "f1_micro", "f1_macro", "mAP_macro", "mAP_micro", "subset_accuracy", "hamming_accuracy"
+
+  # Loss Configuration
+  loss:
+    type: "asl"  # 'asl', 'focal', 'bce' 중 선택
+    params:
+      # Focal Loss - 어려운 샘플에 집중
+      # alpha: 0.25       # Positive class weight (0.25 = negative 3배 중요)
+      # gamma: 2.0        # Focusing parameter (높을수록 easy examples 무시)
+
+      # ASL 사용 시 (loss.type을 'asl'로 변경)
+       gamma_neg: 4    # Negative samples focusing
+       gamma_pos: 1    # Positive samples focusing
+       clip: 0.05      # Probability margin
+
+  optimizer:
+    type: "adamw"
+    betas: [0.9, 0.999]
+    eps: 0.00000001
+
+  scheduler:
+    type: "cosine_annealing"
+    step_per_batch: true
+
+# 5. Output Configuration
+output:
+  log_dir: "outputs/logs"
+  checkpoint_dir: "models/checkpoints"
+
+# 6. Evaluation Metrics
+metrics:
+  enabled:
+    - "accuracy"
+    - "f1"
+    - "precision"
+    - "recall"
+  threshold: 0.5
