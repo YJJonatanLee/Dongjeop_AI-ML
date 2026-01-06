@@ -153,11 +153,13 @@ training:
 
 ## 💡 주요 기능
 
-### 1. ML-Decoder Support (NEW!)
+### 1. ML-Decoder Support with Feature Maps (NEW!)
 Transformer 기반 multi-label classification head로 클래스 간 관계 모델링
-- Query embeddings + Cross-attention
+- **Spatial Feature Maps 사용**: 196개 spatial tokens (14x14 grid)을 직접 활용
+- **Query embeddings + Cross-attention**: 각 클래스가 이미지의 특정 공간 영역에 attend
 - 기존 linear head 대비 성능 향상
 - 7.9M 파라미터 추가
+- Pooled output이 아닌 전체 feature map을 사용하여 공간 정보 보존
 
 ### 2. Full Model Fine-tuning
 전체 모델 end-to-end 학습으로 최고 성능 달성
@@ -263,11 +265,11 @@ results = classifier.batch_classify(["img1.jpg", "img2.jpg"])
 ## 📝 TODO
 
 - [x] ML Decoder 통합
+- [x] ML Decoder에서 spatial feature maps 사용 (성능 개선)
 - [ ] SigLIP2 + ML Decoder 조합 테스트
 - [ ] Test 데이터셋 평가 스크립트 추가
 - [ ] Wandb 로깅 추가
 - [ ] Gradio 데모 추가
-- [ ] ML Decoder에서 sequence features 사용 (성능 개선)
 
 ## 📚 참고 자료
 

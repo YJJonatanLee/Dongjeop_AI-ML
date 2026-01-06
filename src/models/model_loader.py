@@ -1,6 +1,7 @@
 import os
 from typing import Optional
 
+import torch
 import torch.nn as nn
 import yaml
 from transformers import SiglipForImageClassification
@@ -12,6 +13,67 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(_MODELS_DIR))
 _DEFAULT_CONFIG_PATH = os.path.join(
     _PROJECT_ROOT, "models", "configs", "siglip_config.yaml"
 )
+
+
+class SiglipMLDecoderModel(nn.Module):
+    """
+    Custom SigLIP model with ML Decoder that uses feature maps.
+
+    This model extracts spatial feature maps from the vision encoder
+    and passes them to the ML Decoder for multi-label classification.
+    """
+
+    def __init__(self, vision_model, classifier):
+        """
+        Args:
+            vision_model: SigLIP vision model
+            classifier: ML Decoder classifier
+        """
+        super().__init__()
+        self.vision_model = vision_model
+        self.classifier = classifier
+
+    def forward(self, pixel_values=None, labels=None, return_dict=True, **kwargs):
+        """
+        Forward pass using feature maps instead of pooled output.
+
+        Args:
+            pixel_values: Input images
+            labels: Ground truth labels for loss computation
+            return_dict: Whether to return dict or tuple
+
+        Returns:
+            Dict or tuple with logits and optional loss
+        """
+        # Extract feature maps from vision encoder
+        vision_outputs = self.vision_model(
+            pixel_values=pixel_values,
+            return_dict=True
+        )
+
+        # Get feature map (all spatial tokens)
+        # SigLIP: [batch, 196, 768] - NO CLS token, all are patch embeddings
+        feature_map = vision_outputs.last_hidden_state
+
+        # Pass to ML Decoder
+        logits = self.classifier(feature_map)
+
+        # Compute loss if labels provided
+        loss = None
+        if labels is not None:
+            loss_fct = nn.BCEWithLogitsLoss()
+            loss = loss_fct(logits, labels.float())
+
+        if return_dict:
+            return {
+                'loss': loss,
+                'logits': logits,
+            }
+        else:
+            output = (logits,)
+            if loss is not None:
+                output = (loss,) + output
+            return output
 
 
 def _load_config(config_path: str) -> dict:
@@ -84,11 +146,11 @@ def load_model(
         use_ml_decoder = ml_decoder_config.get("enabled", False)
 
         if use_ml_decoder:
-            print("\n=== ML Decoder 적용 ===")
+            print("\n=== ML Decoder 적용 (Feature Map 버전) ===")
             # Get hidden size from vision model
             hidden_size = model.vision_model.config.hidden_size
 
-            # Replace classifier with ML Decoder
+            # Create ML Decoder
             ml_decoder = MLDecoder(
                 num_classes=resolved_num_labels,
                 initial_num_features=hidden_size,
@@ -101,8 +163,7 @@ def load_model(
                 return_intermediate=ml_decoder_config.get("return_intermediate", False),
             )
 
-            model.classifier = ml_decoder
-            print(f"Classifier head replaced with ML Decoder")
+            print(f"ML Decoder 생성 완료:")
             print(f"  Hidden size: {hidden_size}")
             print(f"  Num queries: {ml_decoder_config.get('num_queries', resolved_num_labels)}")
             print(f"  Num layers: {ml_decoder_config.get('num_layers', 1)}")
@@ -111,6 +172,13 @@ def load_model(
             # Calculate ML Decoder parameters
             ml_decoder_params = sum(p.numel() for p in ml_decoder.parameters())
             print(f"  ML Decoder parameters: {ml_decoder_params:,}")
+
+            # Create custom model that uses feature maps
+            vision_model = model.vision_model
+            model = SiglipMLDecoderModel(vision_model=vision_model, classifier=ml_decoder)
+            print(f"✓ Feature map을 사용하는 커스텀 모델로 교체 완료")
+            print(f"  입력: [batch, 196, 768] (14x14 spatial grid)")
+            print(f"  Cross-attention: 각 클래스가 196개 spatial tokens에 attend")
 
     if resolved_freeze:
         print("모델의 Vision Encoder를 동결합니다...")
