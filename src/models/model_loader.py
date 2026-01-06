@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import yaml
 from transformers import SiglipForImageClassification
+from transformers.modeling_outputs import ImageClassifierOutput
 
 from .ml_decoder import MLDecoder
 
@@ -43,7 +44,7 @@ class SiglipMLDecoderModel(nn.Module):
             return_dict: Whether to return dict or tuple
 
         Returns:
-            Dict or tuple with logits and optional loss
+            ImageClassifierOutput with logits and optional loss
         """
         # Extract feature maps from vision encoder
         vision_outputs = self.vision_model(
@@ -64,16 +65,16 @@ class SiglipMLDecoderModel(nn.Module):
             loss_fct = nn.BCEWithLogitsLoss()
             loss = loss_fct(logits, labels.float())
 
-        if return_dict:
-            return {
-                'loss': loss,
-                'logits': logits,
-            }
-        else:
+        if not return_dict:
             output = (logits,)
             if loss is not None:
                 output = (loss,) + output
             return output
+
+        return ImageClassifierOutput(
+            loss=loss,
+            logits=logits,
+        )
 
 
 def _load_config(config_path: str) -> dict:
