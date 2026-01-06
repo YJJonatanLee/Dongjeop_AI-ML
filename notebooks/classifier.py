@@ -1,9 +1,18 @@
 import os
+import sys
 import torch
 from transformers import AutoImageProcessor, SiglipForImageClassification
 from PIL import Image
 from typing import Dict, Optional, List
 import numpy as np
+from pathlib import Path
+
+# Add src to path for imports
+NOTEBOOKS_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = NOTEBOOKS_DIR.parent
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 # 레이블 순서 (dataset.py와 동일)
 LABEL_NAMES = [
@@ -46,28 +55,59 @@ class SigLIPClassifier:
 
         # 모델 로드
         num_labels = len(self.label_names)
-        self.model = SiglipForImageClassification.from_pretrained(
-            model_id,
-            num_labels=num_labels,
-            problem_type="multi_label_classification",
-            ignore_mismatched_sizes=True
-        )
 
-        # 체크포인트 로드
+        # 체크포인트가 있는 경우, config를 읽어서 ML Decoder 사용 여부 확인
         if checkpoint_path:
             print(f"파인튜닝된 가중치 로딩: {checkpoint_path}")
             if not os.path.exists(checkpoint_path):
                 raise FileNotFoundError(f"체크포인트 파일을 찾을 수 없습니다: {checkpoint_path}")
 
             checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-            state_dict = checkpoint.get('model_state_dict', checkpoint)
 
+            # checkpoint에서 config 읽기
+            saved_config = checkpoint.get('config', None)
+
+            if saved_config and saved_config.get('ml_decoder', {}).get('enabled', False):
+                # ML Decoder 모델 사용
+                print("체크포인트에서 ML Decoder 설정을 감지했습니다.")
+                from models.model_loader import load_model
+                import tempfile
+                import yaml
+
+                # 임시 config 파일 생성
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+                    yaml.dump(saved_config, f)
+                    temp_config_path = f.name
+
+                try:
+                    self.model = load_model(config_path=temp_config_path)
+                finally:
+                    os.unlink(temp_config_path)
+            else:
+                # 일반 SigLIP 모델
+                self.model = SiglipForImageClassification.from_pretrained(
+                    model_id,
+                    num_labels=num_labels,
+                    problem_type="multi_label_classification",
+                    ignore_mismatched_sizes=True
+                )
+
+            # 가중치 로드
+            state_dict = checkpoint.get('model_state_dict', checkpoint)
             missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
             if missing_keys:
                 print(f"경고: {len(missing_keys)}개의 키가 체크포인트에 없습니다.")
             if unexpected_keys:
                 print(f"경고: {len(unexpected_keys)}개의 예상치 못한 키가 체크포인트에 있습니다.")
             print("모델 가중치 로드 완료.")
+        else:
+            # Pretrained 모델만 사용
+            self.model = SiglipForImageClassification.from_pretrained(
+                model_id,
+                num_labels=num_labels,
+                problem_type="multi_label_classification",
+                ignore_mismatched_sizes=True
+            )
 
         # GPU 또는 MPS 사용
         if torch.cuda.is_available():

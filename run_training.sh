@@ -23,22 +23,28 @@ show_help() {
     echo ""
     echo "옵션:"
     echo "  --config PATH         커스텀 config 파일 경로"
-    echo "  --model-type TYPE     모델 타입 선택 (siglip 또는 siglip2)"
+    echo "  --model-type TYPE     모델 타입 선택 (siglip, siglip-mldecoder, siglip2, siglip2-mldecoder)"
     echo "  --num-workers N       데이터로더 워커 수 (기본값: 4)"
     echo "  -h, --help           이 도움말 표시"
     echo ""
     echo "예시:"
-    echo "  # SigLIP 학습"
+    echo "  # SigLIP 학습 (linear head)"
     echo "  $0 --model-type siglip"
     echo ""
-    echo "  # SigLIP2 학습"
+    echo "  # SigLIP + ML Decoder 학습 (권장!)"
+    echo "  $0 --model-type siglip-mldecoder"
+    echo ""
+    echo "  # SigLIP2 학습 (linear head)"
     echo "  $0 --model-type siglip2"
+    echo ""
+    echo "  # SigLIP2 + ML Decoder 학습 (최고 성능!)"
+    echo "  $0 --model-type siglip2-mldecoder"
     echo ""
     echo "  # 커스텀 config 파일 사용"
     echo "  $0 --config models/configs/my_config.yaml"
     echo ""
     echo "  # 워커 수 지정"
-    echo "  $0 --model-type siglip --num-workers 8"
+    echo "  $0 --model-type siglip-mldecoder --num-workers 8"
     echo "=========================================="
 }
 
@@ -76,10 +82,14 @@ done
 
 # Config 경로 결정
 if [ -z "$CONFIG_PATH" ]; then
-    if [ "$MODEL_TYPE" = "siglip2" ]; then
-        CONFIG_PATH="models/configs/siglip2_config.yaml"
-    elif [ "$MODEL_TYPE" = "siglip" ]; then
+    if [ "$MODEL_TYPE" = "siglip" ]; then
         CONFIG_PATH="models/configs/siglip_config.yaml"
+    elif [ "$MODEL_TYPE" = "siglip-mldecoder" ]; then
+        CONFIG_PATH="models/configs/siglip_mldecoder_config.yaml"
+    elif [ "$MODEL_TYPE" = "siglip2" ]; then
+        CONFIG_PATH="models/configs/siglip2_config.yaml"
+    elif [ "$MODEL_TYPE" = "siglip2-mldecoder" ]; then
+        CONFIG_PATH="models/configs/siglip2_mldecoder_config.yaml"
     else
         # 기본값: siglip
         CONFIG_PATH="models/configs/siglip_config.yaml"
