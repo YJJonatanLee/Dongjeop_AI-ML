@@ -13,7 +13,7 @@ ml_decoder:
   num_layers: 1  # Number of transformer decoder layers (1 or 2 recommended)
   num_heads: 8  # Number of attention heads
   dim_feedforward: 2048  # Dimension of feedforward network
-  dropout: 0.1  # Dropout rate
+  dropout: 0.3  # Dropout rate (increased to prevent overfitting)
   normalize_before: false  # Pre-norm or post-norm
   return_intermediate: false  # Return intermediate layer outputs
 
@@ -62,9 +62,9 @@ training:
   weight_decay: 0.01
   warmup_epochs: 10
   max_grad_norm: 1.0
-  early_stopping_patience: 15
+  early_stopping_patience: 10  # Reduced to detect overfitting earlier
   device: cuda
-  freeze_vision_encoder: false  # false면 전체 fine-tuning
+  freeze_vision_encoder: true  # Freeze vision encoder to prevent overfitting
 
   # Best model & early stopping criterion
   best_metric: "mAP_macro"  # Options: "loss", "f1_micro", "f1_macro", "mAP_macro", "mAP_micro", "subset_accuracy", "hamming_accuracy"
