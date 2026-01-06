@@ -43,6 +43,11 @@ def parse_args():
         default=4,
         help="Number of data loading workers",
     )
+    parser.add_argument(
+        "--use-mldecoder",
+        action="store_true",
+        help="Enable ML Decoder (overrides config ml_decoder.enabled)",
+    )
     return parser.parse_args()
 
 
@@ -181,6 +186,13 @@ def main():
     print(f"Loading config from: {args.config}")
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
+
+    # ML Decoder 플래그 오버라이드
+    if args.use_mldecoder:
+        if "ml_decoder" not in config:
+            config["ml_decoder"] = {}
+        config["ml_decoder"]["enabled"] = True
+        print("ML Decoder enabled via --use-mldecoder flag")
 
     # Device 설정
     device_name = config["training"].get("device", "cuda")

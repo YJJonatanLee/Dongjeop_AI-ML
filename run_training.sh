@@ -80,16 +80,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Config 경로 결정
+# Config 경로 및 ML Decoder 플래그 결정
+USE_MLDECODER=""
 if [ -z "$CONFIG_PATH" ]; then
     if [ "$MODEL_TYPE" = "siglip" ]; then
         CONFIG_PATH="models/configs/siglip_config.yaml"
     elif [ "$MODEL_TYPE" = "siglip-mldecoder" ]; then
-        CONFIG_PATH="models/configs/siglip_mldecoder_config.yaml"
+        CONFIG_PATH="models/configs/siglip_config.yaml"
+        USE_MLDECODER="--use-mldecoder"
     elif [ "$MODEL_TYPE" = "siglip2" ]; then
         CONFIG_PATH="models/configs/siglip2_config.yaml"
     elif [ "$MODEL_TYPE" = "siglip2-mldecoder" ]; then
-        CONFIG_PATH="models/configs/siglip2_mldecoder_config.yaml"
+        CONFIG_PATH="models/configs/siglip2_config.yaml"
+        USE_MLDECODER="--use-mldecoder"
     else
         # 기본값: siglip
         CONFIG_PATH="models/configs/siglip_config.yaml"
@@ -113,7 +116,7 @@ echo "=========================================="
 echo ""
 
 # 학습 실행
-"${PYTHON_CMD[@]}" src/training/train.py --config "$CONFIG_PATH" --num_workers "$NUM_WORKERS"
+"${PYTHON_CMD[@]}" src/training/train.py --config "$CONFIG_PATH" --num_workers "$NUM_WORKERS" $USE_MLDECODER
 
 echo ""
 echo "=========================================="
