@@ -58,13 +58,15 @@ training:
   batch_size: 32
   gradient_accumulation_steps: 1
   learning_rate: 3.0e-5  # SigLIP2는 약간 낮은 LR 추천
+  vision_encoder_lr: 1.0e-6  # Lower LR for pretrained vision encoder (when using differential LR)
+  classifier_lr: 3.0e-4  # Higher LR for classifier head (when using differential LR)
   min_lr: 1.0e-7
   weight_decay: 0.01
   warmup_epochs: 10
   max_grad_norm: 1.0
   early_stopping_patience: 10  # Reduced to detect overfitting earlier
   device: cuda
-  freeze_vision_encoder: true  # Freeze vision encoder to prevent overfitting
+  freeze_vision_encoder: false  # Use differential LR instead of freezing
 
   # Best model & early stopping criterion
   best_metric: "mAP_macro"  # Options: "loss", "f1_micro", "f1_macro", "mAP_macro", "mAP_micro", "subset_accuracy", "hamming_accuracy"

@@ -114,17 +114,55 @@ def create_dataloaders(config, config_path, processor, num_workers=4):
 
 
 def create_optimizer(model, config):
-    """Optimizer 생성"""
+    """Optimizer 생성 (Differential Learning Rates 지원)"""
     training_cfg = config["training"]
     optimizer_cfg = training_cfg.get("optimizer", {})
 
-    optimizer = AdamW(
-        model.parameters(),
-        lr=training_cfg["learning_rate"],
-        betas=tuple(optimizer_cfg.get("betas", [0.9, 0.999])),
-        eps=optimizer_cfg.get("eps", 1e-8),
-        weight_decay=training_cfg.get("weight_decay", 0.01),
-    )
+    # Check if ML Decoder is enabled
+    ml_decoder_enabled = config.get("ml_decoder", {}).get("enabled", False)
+    use_differential_lr = ml_decoder_enabled and not training_cfg.get("freeze_vision_encoder", False)
+
+    if use_differential_lr:
+        # Differential Learning Rates for Vision Encoder and Classifier
+        vision_lr = training_cfg.get("vision_encoder_lr", training_cfg["learning_rate"] * 0.1)
+        classifier_lr = training_cfg.get("classifier_lr", training_cfg["learning_rate"])
+
+        # Separate parameters
+        vision_params = []
+        classifier_params = []
+
+        for name, param in model.named_parameters():
+            if name.startswith("vision_model"):
+                vision_params.append(param)
+            else:
+                classifier_params.append(param)
+
+        param_groups = [
+            {"params": vision_params, "lr": vision_lr, "name": "vision_encoder"},
+            {"params": classifier_params, "lr": classifier_lr, "name": "classifier"},
+        ]
+
+        print(f"=== Differential Learning Rates ===")
+        print(f"Vision Encoder LR: {vision_lr}")
+        print(f"Classifier LR: {classifier_lr}")
+        print(f"Vision Encoder params: {len(vision_params)}")
+        print(f"Classifier params: {len(classifier_params)}")
+
+        optimizer = AdamW(
+            param_groups,
+            betas=tuple(optimizer_cfg.get("betas", [0.9, 0.999])),
+            eps=optimizer_cfg.get("eps", 1e-8),
+            weight_decay=training_cfg.get("weight_decay", 0.01),
+        )
+    else:
+        # Standard single learning rate
+        optimizer = AdamW(
+            model.parameters(),
+            lr=training_cfg["learning_rate"],
+            betas=tuple(optimizer_cfg.get("betas", [0.9, 0.999])),
+            eps=optimizer_cfg.get("eps", 1e-8),
+            weight_decay=training_cfg.get("weight_decay", 0.01),
+        )
 
     return optimizer
 
@@ -151,30 +189,74 @@ def create_scheduler(optimizer, config, total_steps, steps_per_epoch):
     print(f"warmup_epochs: {warmup_epochs}")
     print(f"warmup_steps: {warmup_steps}")
     print(f"total_steps: {total_steps}")
-    print(f"base_lr: {base_lr}, min_lr: {min_lr}")
 
-    # LambdaLR로 warmup + cosine annealing 구현
-    def lr_lambda(current_step):
-        if warmup_steps > 0 and current_step < warmup_steps:
-            # Linear warmup: min_lr -> base_lr
-            return (min_lr + (base_lr - min_lr) * current_step / warmup_steps) / base_lr
+    # Differential LR: 각 param group마다 독립적인 lambda 함수 생성
+    if hasattr(optimizer, 'param_groups') and len(optimizer.param_groups) > 1:
+        print(f"Param groups: {len(optimizer.param_groups)}")
+
+        # 각 그룹의 initial_lr 대비 min_lr 비율 계산
+        lr_lambdas = []
+        for i, group in enumerate(optimizer.param_groups):
+            initial_lr = group['lr']
+            # 각 그룹마다 initial_lr에 비례하는 min_lr 계산
+            group_min_lr = min_lr * (initial_lr / base_lr) if base_lr > 0 else min_lr
+            min_lr_factor = group_min_lr / initial_lr
+
+            print(f"  Group {i} ({group.get('name', 'unnamed')}): "
+                  f"initial_lr={initial_lr:.2e}, min_lr={group_min_lr:.2e}, "
+                  f"factor={min_lr_factor:.4f}")
+
+            # 각 그룹용 lambda 함수 생성
+            def make_lr_lambda(factor):
+                def lr_lambda(current_step):
+                    if warmup_steps > 0 and current_step < warmup_steps:
+                        # Linear warmup: 0 -> 1
+                        return current_step / warmup_steps
+                    else:
+                        # Cosine annealing: 1 -> factor
+                        if warmup_steps > 0:
+                            progress = (current_step - warmup_steps) / (total_steps - warmup_steps)
+                        else:
+                            progress = current_step / total_steps
+                        cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
+                        return factor + (1 - factor) * cosine_decay
+                return lr_lambda
+
+            lr_lambdas.append(make_lr_lambda(min_lr_factor))
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambdas)
+
+        if warmup_steps > 0:
+            print(f"Scheduler: Warmup ({warmup_steps} steps) + CosineAnnealing ({total_steps - warmup_steps} steps)")
+            print(f"  Each group scales independently from its initial_lr to its min_lr")
         else:
-            # Cosine annealing: base_lr -> min_lr
-            if warmup_steps > 0:
-                progress = (current_step - warmup_steps) / (total_steps - warmup_steps)
-            else:
-                progress = current_step / total_steps
-            cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
-            return (min_lr + (base_lr - min_lr) * cosine_decay) / base_lr
+            print(f"CosineAnnealingLR scheduler with T_max={total_steps}")
 
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
-    if warmup_steps > 0:
-        print(f"Scheduler: Warmup ({warmup_steps} steps) + CosineAnnealing ({total_steps - warmup_steps} steps)")
-        print(f"  Warmup: {min_lr:.2e} -> {base_lr:.2e}")
-        print(f"  Decay:  {base_lr:.2e} -> {min_lr:.2e}")
+    # Single LR: 하나의 lambda 함수만 사용
     else:
-        print(f"CosineAnnealingLR scheduler with T_max={total_steps}")
+        print(f"base_lr: {base_lr}, min_lr: {min_lr}")
+        min_lr_factor = min_lr / base_lr
+
+        def lr_lambda(current_step):
+            if warmup_steps > 0 and current_step < warmup_steps:
+                # Linear warmup: 0 -> 1
+                return current_step / warmup_steps
+            else:
+                # Cosine annealing: 1 -> min_lr_factor
+                if warmup_steps > 0:
+                    progress = (current_step - warmup_steps) / (total_steps - warmup_steps)
+                else:
+                    progress = current_step / total_steps
+                cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
+                return min_lr_factor + (1 - min_lr_factor) * cosine_decay
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+        if warmup_steps > 0:
+            print(f"Scheduler: Warmup ({warmup_steps} steps) + CosineAnnealing ({total_steps - warmup_steps} steps)")
+            print(f"  Warmup: 0 -> 1, Decay: 1 -> {min_lr_factor:.4f}")
+        else:
+            print(f"CosineAnnealingLR scheduler with T_max={total_steps}")
 
     return scheduler
 
