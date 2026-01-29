@@ -13,9 +13,26 @@ ml_decoder:
   num_layers: 1  # Number of transformer decoder layers (1 or 2 recommended)
   num_heads: 8  # Number of attention heads
   dim_feedforward: 2048  # Dimension of feedforward network
-  dropout: 0.3  # Dropout rate (increased to prevent overfitting)
+  dropout: 0.2  # Dropout rate (increased to prevent overfitting)
   normalize_before: false  # Pre-norm or post-norm
   return_intermediate: false  # Return intermediate layer outputs
+
+# 2-1. CSRA (Class-Specific Residual Attention) Configuration
+csra:
+  enabled: false  # Set to true to use CSRA (use --use-csra flag)
+  num_heads: 4  # Number of CSRA heads with different temperatures
+  lam: 0.1  # Residual weight (balance between attention and average pooling)
+  temperatures: [1.0, 2.0, 4.0, 6.0]  # Temperature for each head
+  dropout: 0.1  # Dropout rate before CSRA heads
+
+# 2-2. Q2L (Query2Label) Configuration
+q2l:
+  enabled: false  # Set to true to use Q2L (use --use-q2l flag)
+  num_layers: 2  # Number of transformer decoder layers
+  num_heads: 8  # Number of attention heads
+  dim_feedforward: 2048  # Dimension of feedforward network
+  dropout: 0.1  # Dropout rate
+  use_pos_encoding: true  # Whether to use positional encoding for image features
 
 # 3. Data Configuration
 data:
@@ -54,17 +71,17 @@ augmentations:
 
 # 5. Training Configuration
 training:
-  epochs: 100
+  epochs: 60              # 로그 기준 6에 성능 정점이 나와 총 에폭 단축
   batch_size: 32
   gradient_accumulation_steps: 1
-  learning_rate: 3.0e-5  # SigLIP2는 약간 낮은 LR 추천
-  vision_encoder_lr: 1.0e-6  # Lower LR for pretrained vision encoder (when using differential LR)
-  classifier_lr: 3.0e-4  # Higher LR for classifier head (when using differential LR)
+  learning_rate: 3.0e-5  # 성능 향상 시도: base LR 소폭 증가
+  vision_encoder_lr: 2.0e-6  # Lower LR for pretrained vision encoder (when using differential LR)
+  classifier_lr: 1.5e-4  # Head LR 약간 상향해 수렴 가속
   min_lr: 1.0e-7
-  weight_decay: 0.01
-  warmup_epochs: 10
+  weight_decay: 0.02
+  warmup_epochs: 8        # 초기 10→3: 빠른 워밍업 후 본 학습 진입
   max_grad_norm: 1.0
-  early_stopping_patience: 10  # Reduced to detect overfitting earlier
+  early_stopping_patience: 8   # 성능 정체 구간이 길어지기 전에 종료
   device: cuda
   freeze_vision_encoder: false  # Use differential LR instead of freezing
 
@@ -73,16 +90,12 @@ training:
 
   # Loss Configuration
   loss:
-    type: "asl"  # 'asl', 'focal', 'bce' 중 선택
+    type: "asl"  # 'asl' or 'bce'
     params:
-      # Focal Loss - 어려운 샘플에 집중
-      # alpha: 0.25       # Positive class weight (0.25 = negative 3배 중요)
-      # gamma: 2.0        # Focusing parameter (높을수록 easy examples 무시)
-
-      # ASL 사용 시 (loss.type을 'asl'로 변경)
-       gamma_neg: 4    # Negative samples focusing
-       gamma_pos: 1    # Positive samples focusing
-       clip: 0.05      # Probability margin
+      # ASL (Asymmetric Loss) - 클래스 불균형에 강함 (추천!)
+      gamma_neg: 3    # Negative samples focusing
+      gamma_pos: 1    # Positive samples focusing
+      clip: 0.05      # Probability margin
 
   optimizer:
     type: "adamw"
@@ -100,9 +113,4 @@ output:
 
 # 7. Evaluation Metrics
 metrics:
-  enabled:
-    - "accuracy"
-    - "f1"
-    - "precision"
-    - "recall"
-  threshold: 0.5
+  threshold: 0.5  # Sigmoid threshold for prediction (메트릭 계산은 코드에서 고정)

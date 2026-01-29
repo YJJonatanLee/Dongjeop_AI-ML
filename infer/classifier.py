@@ -1,7 +1,7 @@
 import os
 import sys
 import torch
-from transformers import AutoImageProcessor, SiglipForImageClassification
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 from PIL import Image
 from typing import Dict, Optional, List
 import numpy as np
@@ -25,7 +25,9 @@ LABEL_NAMES = [
 
 class SigLIPClassifier:
     """
-    SigLIP 모델을 사용한 Multi-label Classification
+    Vision 모델을 사용한 Multi-label Classification
+
+    Supports: SigLIP, DINOv2, ConvNeXt, and other vision transformers.
     """
 
     def __init__(
@@ -36,10 +38,13 @@ class SigLIPClassifier:
         label_names: Optional[List[str]] = None
     ):
         """
-        SigLIPClassifier 초기화
+        Classifier 초기화
 
         Args:
             model_id (str): Hugging Face 모델 ID
+                - SigLIP: google/siglip-base-patch16-224, google/siglip2-base-patch16-224
+                - DINOv2: facebook/dinov2-base, facebook/dinov2-large
+                - ConvNeXt: facebook/convnext-base-224, facebook/convnext-base-224-22k
             checkpoint_path (str, optional): 파인튜닝된 모델 체크포인트 경로
             threshold (float): Sigmoid threshold for prediction
             label_names (List[str], optional): 레이블 이름 리스트
@@ -83,8 +88,8 @@ class SigLIPClassifier:
                 finally:
                     os.unlink(temp_config_path)
             else:
-                # 일반 SigLIP 모델
-                self.model = SiglipForImageClassification.from_pretrained(
+                # 일반 모델 (SigLIP, DINOv2, ConvNeXt 등)
+                self.model = AutoModelForImageClassification.from_pretrained(
                     model_id,
                     num_labels=num_labels,
                     problem_type="multi_label_classification",
@@ -100,8 +105,8 @@ class SigLIPClassifier:
                 print(f"경고: {len(unexpected_keys)}개의 예상치 못한 키가 체크포인트에 있습니다.")
             print("모델 가중치 로드 완료.")
         else:
-            # Pretrained 모델만 사용
-            self.model = SiglipForImageClassification.from_pretrained(
+            # Pretrained 모델만 사용 (SigLIP, DINOv2, ConvNeXt 등)
+            self.model = AutoModelForImageClassification.from_pretrained(
                 model_id,
                 num_labels=num_labels,
                 problem_type="multi_label_classification",

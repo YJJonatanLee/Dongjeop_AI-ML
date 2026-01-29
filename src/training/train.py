@@ -48,6 +48,16 @@ def parse_args():
         action="store_true",
         help="Enable ML Decoder (overrides config ml_decoder.enabled)",
     )
+    parser.add_argument(
+        "--use-csra",
+        action="store_true",
+        help="Enable CSRA Head (overrides config csra.enabled)",
+    )
+    parser.add_argument(
+        "--use-q2l",
+        action="store_true",
+        help="Enable Q2L (Query2Label) Head (overrides config q2l.enabled)",
+    )
     return parser.parse_args()
 
 
@@ -118,9 +128,11 @@ def create_optimizer(model, config):
     training_cfg = config["training"]
     optimizer_cfg = training_cfg.get("optimizer", {})
 
-    # Check if ML Decoder is enabled
+    # Check if ML Decoder, CSRA, or Q2L is enabled
     ml_decoder_enabled = config.get("ml_decoder", {}).get("enabled", False)
-    use_differential_lr = ml_decoder_enabled and not training_cfg.get("freeze_vision_encoder", False)
+    csra_enabled = config.get("csra", {}).get("enabled", False)
+    q2l_enabled = config.get("q2l", {}).get("enabled", False)
+    use_differential_lr = (ml_decoder_enabled or csra_enabled or q2l_enabled) and not training_cfg.get("freeze_vision_encoder", False)
 
     if use_differential_lr:
         # Differential Learning Rates for Vision Encoder and Classifier
@@ -276,6 +288,20 @@ def main():
         config["ml_decoder"]["enabled"] = True
         print("ML Decoder enabled via --use-mldecoder flag")
 
+    # CSRA 플래그 오버라이드
+    if args.use_csra:
+        if "csra" not in config:
+            config["csra"] = {}
+        config["csra"]["enabled"] = True
+        print("CSRA Head enabled via --use-csra flag")
+
+    # Q2L 플래그 오버라이드
+    if args.use_q2l:
+        if "q2l" not in config:
+            config["q2l"] = {}
+        config["q2l"]["enabled"] = True
+        print("Q2L (Query2Label) Head enabled via --use-q2l flag")
+
     # Device 설정
     device_name = config["training"].get("device", "cuda")
     if device_name == "cuda" and not torch.cuda.is_available():
@@ -286,7 +312,9 @@ def main():
 
     # Processor 로드
     model_id = config["model"]["pretrained_model_id"]
-    processor = AutoImageProcessor.from_pretrained(model_id, use_fast=False)
+    # SAM-2 only provides a fast image processor
+    use_fast_processor = True if "sam2" in str(model_id).lower() else False
+    processor = AutoImageProcessor.from_pretrained(model_id, use_fast=use_fast_processor)
 
     # 데이터로더 생성
     train_loader, val_loader = create_dataloaders(
@@ -294,7 +322,21 @@ def main():
     )
 
     # 모델 로드
-    model = load_model(config_path=args.config)
+    config_path_for_model = args.config
+    temp_config_path = None
+    if args.use_mldecoder or args.use_csra or args.use_q2l:
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.safe_dump(config, f)
+            temp_config_path = f.name
+        config_path_for_model = temp_config_path
+
+    try:
+        model = load_model(config_path=config_path_for_model)
+    finally:
+        if temp_config_path:
+            os.unlink(temp_config_path)
     model.to(device)
 
     # Optimizer 생성
@@ -316,6 +358,23 @@ def main():
     loss_config = training_cfg.get("loss", {"type": "bce"})
     loss_fn = get_loss_fn(loss_config)
 
+    # Head 타입에 따른 model_name 결정
+    base_model_name = config["model"]["name"]
+    ml_decoder_enabled = config.get("ml_decoder", {}).get("enabled", False)
+    csra_enabled = config.get("csra", {}).get("enabled", False)
+    q2l_enabled = config.get("q2l", {}).get("enabled", False)
+
+    if ml_decoder_enabled:
+        head_suffix = "mldecoder"
+    elif csra_enabled:
+        head_suffix = "csra"
+    elif q2l_enabled:
+        head_suffix = "q2l"
+    else:
+        head_suffix = "linear"
+
+    model_name_with_head = f"{base_model_name}/{head_suffix}"
+
     # Trainer 생성
     trainer = SigLIPTrainer(
         model=model,
@@ -323,7 +382,7 @@ def main():
         scheduler=scheduler,
         config=config,
         device=device,
-        model_name=config["model"]["name"],
+        model_name=model_name_with_head,
         loss_fn=loss_fn,
         project_root=PROJECT_ROOT,
         threshold=threshold,

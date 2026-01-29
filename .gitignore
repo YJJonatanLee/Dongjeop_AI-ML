@@ -212,3 +212,4 @@ events.out.tfevents.*
 # Local experiments
 experiments/
 scratch/
+claude.md

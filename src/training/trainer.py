@@ -94,7 +94,9 @@ class SigLIPTrainer:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         self.log_file = self.log_dir / f"train_{timestamp}.log"
-        self.best_ckpt = self.checkpoint_dir / f"best_model_{model_name}_{timestamp}.pth"
+        # 파일명에는 슬래시 대신 언더스코어 사용
+        safe_model_name = model_name.replace("/", "_")
+        self.best_ckpt = self.checkpoint_dir / f"best_model_{safe_model_name}_{timestamp}.pth"
 
         # Initialize best metric value based on optimization direction
         if self.higher_is_better:

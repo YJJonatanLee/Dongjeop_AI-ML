@@ -10,6 +10,7 @@ Official implementation: https://github.com/Alibaba-MIIL/ML_Decoder
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import copy
 
 
 class MLDecoder(nn.Module):
@@ -122,13 +123,16 @@ class MLDecoder(nn.Module):
         # Transpose back: (batch_size, num_queries, num_features)
         hs = hs.transpose(0, 1)
 
-        # Average pool over queries: (batch_size, num_features)
-        # Or use only the first query, or max pool
-        # Here we use average pooling
-        hs = hs.mean(dim=1)
+        # Classification head per query
+        logits_per_query = self.classifier(hs)  # (batch, num_queries, num_classes)
 
-        # Classification head
-        logits = self.classifier(hs)
+        if self.num_queries == self.num_classes:
+            # 쿼리 i가 클래스 i를 담당하도록 매핑
+            idx = torch.arange(self.num_classes, device=hs.device)
+            logits = logits_per_query[:, idx, idx]
+        else:
+            # 쿼리 수와 클래스 수가 다르면 평균 풀링으로 집계
+            logits = logits_per_query.mean(dim=1)
 
         return logits
 
@@ -217,9 +221,7 @@ class TransformerDecoder(nn.Module):
 
     def __init__(self, decoder_layer, num_layers, norm=None, return_intermediate=False):
         super().__init__()
-        self.layers = nn.ModuleList([
-            decoder_layer for _ in range(num_layers)
-        ])
+        self.layers = nn.ModuleList([copy.deepcopy(decoder_layer) for _ in range(num_layers)])
         self.num_layers = num_layers
         self.norm = norm
         self.return_intermediate = return_intermediate

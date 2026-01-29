@@ -1,9 +1,9 @@
-# SigLIP Multi-Label Classification Configuration
+# DINOv2 Multi-Label Classification Configuration
 
 # 1. Model Configuration
 model:
-  name: siglip-base-patch16-224
-  pretrained_model_id: google/siglip-base-patch16-224
+  name: dinov2-base-patch14-224
+  pretrained_model_id: facebook/dinov2-base
   num_labels: 5  # has_step, has_movable_chair, has_high_chair, has_fixed_chair, has_floor_chair
 
 # 2. ML-Decoder Configuration
@@ -17,12 +17,18 @@ ml_decoder:
   normalize_before: false  # Pre-norm or post-norm
   return_intermediate: false  # Return intermediate layer outputs
 
+  # DINOv2-specific: CLS token handling
+  # - DINOv2 outputs [batch, 257, 768]: CLS token + 256 patch tokens
+  # - CLS token is automatically removed in forward pass
+  # - ML-Decoder receives only spatial tokens: [batch, 256, 768]
+  # - This ensures optimal performance for multi-label classification
+
 # 2-1. CSRA (Class-Specific Residual Attention) Configuration
 csra:
   enabled: false  # Set to true to use CSRA (use --use-csra flag)
   num_heads: 4  # Number of CSRA heads with different temperatures
   lam: 0.1  # Residual weight (balance between attention and average pooling)
-  temperatures: [1.0, 2.0, 4.0, 6.0]  # Temperature for each head (higher = softer attention)
+  temperatures: [1.0, 2.0, 4.0, 6.0]  # Temperature for each head
   dropout: 0.1  # Dropout rate before CSRA heads
 
 # 2-2. Q2L (Query2Label) Configuration
@@ -71,17 +77,17 @@ augmentations:
 
 # 5. Training Configuration
 training:
-  epochs: 60              # 로그 기준 5~6에 성능 정점이 나와 총 에폭 단축
-  batch_size: 32  # SigLIP은 작은 배치도 잘 작동
+  epochs: 60
+  batch_size: 32
   gradient_accumulation_steps: 1
-  learning_rate: 6.0e-5      # 성능 향상 시도: base LR 소폭 증가
-  vision_encoder_lr: 1.0e-6  # Lower LR for pretrained vision encoder (when using differential LR)
-  classifier_lr: 3.5e-4  # Head LR 약간 상향해 수렴 가속
+  learning_rate: 5.0e-5      # DINOv2는 약간 낮은 LR 추천
+  vision_encoder_lr: 8.0e-7  # Lower LR for pretrained vision encoder (when using differential LR)
+  classifier_lr: 3.0e-4      # Head LR
   min_lr: 1.0e-7
-  weight_decay: 0.01
-  warmup_epochs: 3        # 초기 10→3: 빠른 워밍업 후 본 학습 진입
+  weight_decay: 0.05         # DINOv2는 약간 높은 weight decay 추천
+  warmup_epochs: 3
   max_grad_norm: 1.0
-  early_stopping_patience: 8   # 성능 정체 구간이 길어지기 전에 종료
+  early_stopping_patience: 8
   device: cuda
   freeze_vision_encoder: false  # Use differential LR instead of freezing
 
@@ -93,9 +99,9 @@ training:
     type: "asl"  # 'asl' or 'bce'
     params:
       # ASL (Asymmetric Loss) - 클래스 불균형에 강함 (추천!)
-      gamma_neg: 4      # Negative samples focusing (높을수록 hard negative에 집중)
-      gamma_pos: 1      # Positive samples focusing (낮을수록 모든 positive 중요)
-      clip: 0.05        # Probability margin (overconfidence 방지)
+      gamma_neg: 4      # Negative samples focusing
+      gamma_pos: 1      # Positive samples focusing
+      clip: 0.05        # Probability margin
 
   optimizer:
     type: "adamw"
@@ -113,4 +119,4 @@ output:
 
 # 7. Evaluation Metrics
 metrics:
-  threshold: 0.5  # Sigmoid threshold for prediction (메트릭 계산은 코드에서 고정)
+  threshold: 0.5  # Sigmoid threshold for prediction
