@@ -1,5 +1,5 @@
 def main():
-    print("Hello from siglip-classification!")
+    print("Hello from Dongjeop_Classification!")
 
 
 if __name__ == "__main__":
