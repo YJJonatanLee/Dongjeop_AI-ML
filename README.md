@@ -3,7 +3,10 @@
 다양한 Vision 모델(SigLIP, DINOv2, ConvNeXt 등)을 사용한 multi-label image classification 파인튜닝 프로젝트.
 
 **지원 모델**: SigLIP, SigLIP2, DINOv2, ConvNeXt, ConvNeXt V2, SAM-2, EVA-02
+
 **지원 Head**: Linear, ML-Decoder, CSRA, Q2L
+
+**지원 Loss**: Asymmetric loss, DB loss, BCE loss
 
 ## 태스크
 
